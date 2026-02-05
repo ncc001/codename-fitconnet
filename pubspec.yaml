@@ -1,0 +1,50 @@
+name: fit_connect
+description: "App de Gimnasio Cientifica"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+
+  wakelock_plus: ^1.2.0  # <--- AGREGA ESTA LÍNEA
+    
+  # Lógica y Estado
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+  
+  # Base de Datos
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  
+  # Navegación y Utilidades
+  go_router: ^14.0.0
+  google_fonts: ^6.2.1
+  path_provider: ^2.1.3
+  uuid: ^4.4.0
+  intl: ^0.20.2
+
+  # --- NUEVAS AGREGADAS (Para el Timer) ---
+  audioplayers: ^6.0.0
+ 
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  # Generadores de Código (Las herramientas)
+  build_runner: ^2.4.9
+  riverpod_generator: ^2.4.0
+  hive_generator: ^2.0.1
+  custom_lint: ^0.6.4
+  riverpod_lint: ^2.3.10
+
+flutter:
+  uses-material-design: true
+  #sonido alerta
+  assets:
+    - assets/sounds/
