@@ -1,20 +1,62 @@
-name: Build Android APK
-on: [push]
+name: Sistema Híbrido (Alpha + Versiones)
+
+on:
+  push:
+    branches:
+      - 'main'
+      - 'master'
+    tags:
+      - 'v*'
+
+permissions: write-all
+
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-java@v3
+      - uses: actions/checkout@v4
+
+      # 1. Configurar Java 17 (Crucial para evitar Exit Code 1)
+      - uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
+          cache: 'gradle'
+
+      # 2. Configurar Flutter
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.0' # O la versión que uses
+          channel: 'stable'
+          cache: true
+
+      # 3. Aceptar licencias y descargar dependencias
       - run: flutter pub get
-      - run: flutter build apk --release
-      - uses: actions/upload-artifact@v4
+      
+      # 4. Construir el APK con banderas de seguridad
+      - run: flutter build apk --release --no-tree-shake-icons
+
+      # 5. CASO A: Actualizar ALPHA
+      - name: Actualizar Release Alpha
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        uses: ncipollo/release-action@v1
         with:
-          name: release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          artifacts: "build/app/outputs/flutter-apk/app-release.apk"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: "alpha"
+          name: "Fit-Connect Alpha (Última Build)"
+          allowUpdates: true
+          removeArtifacts: true
+          replacesArtifacts: true
+          makeLatest: false
+          prerelease: true
+
+      # 6. CASO B: Crear VERSIÓN OFICIAL
+      - name: Publicar Versión Estable
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "build/app/outputs/flutter-apk/app-release.apk"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref_name }}
+          name: "Fit-Connect Oficial ${{ github.ref_name }}"
+          makeLatest: true
