@@ -1,14 +1,15 @@
 import 'dart:async';
 import 'dart:ui'; 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Para HapticFeedback (Vibración nativa)
+import 'package:flutter/services.dart'; // Para HapticFeedback
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:wakelock_plus/wakelock_plus.dart'; // Para mantener pantalla encendida
+import 'package:wakelock_plus/wakelock_plus.dart'; 
 import '../data/exercise_database.dart'; 
 
 class WorkoutScreen extends StatefulWidget {
   final String exerciseName;
+  // Estos valores ahora son "sugerencias", el algoritmo tiene la última palabra
   final int targetSets; 
   final String targetReps; 
   final int restSeconds;
@@ -25,15 +26,18 @@ class WorkoutScreen extends StatefulWidget {
   State<WorkoutScreen> createState() => _WorkoutScreenState();
 }
 
-class _WorkoutScreenState extends State<WorkoutScreen> {
+class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserver {
   late String currentExerciseName;
   List<Map<String, dynamic>> setsData = [];
   List<Map<String, String>> previousValues = [];
   final ScrollController _scrollController = ScrollController(); 
   
+  // --- VARIABLES DEL TIMER ---
   Timer? _timer;         
   Timer? _alarmTimer;    
   int _alarmLoopCount = 0; 
+  DateTime? _timerEndTime; 
+  int _frozenTimeLeft = 0; 
 
   final ValueNotifier<int> _timeLeftNotifier = ValueNotifier(0);
   final ValueNotifier<bool> _isRestFinishedNotifier = ValueNotifier(false);
@@ -42,28 +46,32 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isLoading = true;
   String _historyText = "Cargando...";
+  
+  // Variables para mostrar el objetivo científico en pantalla
+  int _optimalSets = 4;
+  String _optimalReps = "10-12";
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); 
     currentExerciseName = widget.exerciseName;
-    _configureAudioSession(); // Configura el audio para pausar/reanudar Spotify
+    _configureAudioSession(); 
     _initializeRealData(); 
   }
 
-  // --- CONFIGURACIÓN DE AUDIO CORRECTA ---
+  // --- CONFIGURACIÓN DE AUDIO (SPOTIFY FRIENDLY) ---
   Future<void> _configureAudioSession() async {
     final AudioContext audioContext = AudioContext(
       iOS: AudioContextIOS(
         category: AVAudioSessionCategory.playback, 
-        options: {AVAudioSessionOptions.duckOthers}, // CORREGIDO: {} en lugar de []
+        options: {AVAudioSessionOptions.duckOthers}, 
       ),
       android: AudioContextAndroid(
         isSpeakerphoneOn: true,
         stayAwake: true,
         contentType: AndroidContentType.sonification,
         usageType: AndroidUsageType.assistanceSonification,
-        // gainTransient: Pide el audio, pausa a los demás, y lo devuelve al terminar
         audioFocus: AndroidAudioFocus.gainTransient, 
       ),
     );
@@ -72,7 +80,8 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
   
   @override
   void dispose() {
-    WakelockPlus.disable(); // Asegurar que la pantalla se apague al salir
+    WidgetsBinding.instance.removeObserver(this);
+    WakelockPlus.disable(); 
     _timer?.cancel();
     _alarmTimer?.cancel(); 
     _audioPlayer.dispose();
@@ -84,8 +93,48 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+       _syncTimerUI();
+    }
+  }
+
+  // --- LÓGICA CIENTÍFICA: CALCULAR SERIES Y REPS ÓPTIMAS ---
+  void _calculateOptimalVolume() {
+    final name = currentExerciseName.toLowerCase();
+    
+    // 1. FUERZA / BASICOS PESADOS
+    if (name.contains('sentadilla') || name.contains('squat') || 
+        name.contains('muerto') || name.contains('deadlift') || 
+        name.contains('banca') || name.contains('bench')) {
+      _optimalSets = 4;
+      _optimalReps = "6-8"; // Rango de fuerza
+      return;
+    }
+
+    // 2. HIPERTROFIA COMPUESTA
+    if (name.contains('prensa') || name.contains('leg press') || 
+        name.contains('zancada') || name.contains('lunge') || 
+        name.contains('remo') || name.contains('row') ||
+        name.contains('militar') || name.contains('overhead') ||
+        name.contains('dominada') || name.contains('pull')) {
+      _optimalSets = 4;
+      _optimalReps = "8-10"; // Hipertrofia sarco
+      return;
+    }
+
+    // 3. AISLAMIENTO / METABÓLICO (Por defecto)
+    // Curls, extensiones, elevaciones, pantorrillas
+    _optimalSets = 3;
+    _optimalReps = "12-15"; // Estrés metabólico
+  }
+
   Future<void> _initializeRealData() async {
     setState(() => _isLoading = true); 
+    
+    // Calculamos objetivos ANTES de crear la lista
+    _calculateOptimalVolume();
 
     var historyBox = await Hive.openBox('exercise_history');
     var sessionData = historyBox.get(currentExerciseName);
@@ -101,9 +150,12 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
 
     List<Map<String, dynamic>> tempSets = [];
     List<Map<String, String>> tempPrev = []; 
-    String defaultRepVal = widget.targetReps.split('-')[0].trim(); 
+    
+    // Usamos el rango bajo de la recomendación como default en el input
+    String defaultRepVal = _optimalReps.split('-')[0].trim(); 
 
-    for (int i = 0; i < widget.targetSets; i++) {
+    // Usamos _optimalSets en lugar de widget.targetSets
+    for (int i = 0; i < _optimalSets; i++) {
       String savedWeight = "";
       String savedReps = defaultRepVal; 
       bool savedCompleted = false;
@@ -138,8 +190,26 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
     }
   }
 
+  // --- LÓGICA CIENTÍFICA: CALCULAR DESCANSO (Se mantiene igual) ---
+  int _getAdaptiveRestTime() {
+    final name = currentExerciseName.toLowerCase();
+    if (name.contains('sentadilla') || name.contains('squat') || 
+        name.contains('muerto') || name.contains('deadlift') || 
+        name.contains('banca') || name.contains('bench') ||
+        name.contains('militar') || name.contains('overhead')) {
+      return 180;
+    }
+    if (name.contains('prensa') || name.contains('leg press') || 
+        name.contains('zancada') || name.contains('lunge') || 
+        name.contains('remo') || name.contains('row') ||
+        name.contains('dominada') || name.contains('pull up')) {
+      return 120;
+    }
+    return 90; 
+  }
+
   Future<bool> _onWillPop() async {
-    WakelockPlus.disable(); // Desactivar Wakelock si usan botón atrás
+    WakelockPlus.disable(); 
     await _saveWorkoutResult(); 
     if (mounted) {
       Navigator.pop(context, currentExerciseName);
@@ -150,58 +220,31 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
   void _goBack() => _onWillPop();
   void _saveAndExit() => _onWillPop();
 
-  void _showSwapConfirmation(Exercise newExercise) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text("Confirmar Cambio", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: Text("¿Cambiar a ${newExercise.name}?\n\nSe reiniciará esta sesión.", style: const TextStyle(color: Colors.white70)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("CANCELAR", style: TextStyle(color: Colors.grey))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00E676)),
-            onPressed: () {
-              Navigator.pop(ctx); 
-              setState(() => currentExerciseName = newExercise.name);
-              _initializeRealData();
-              _saveWorkoutResult(); 
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Cambiado a: ${newExercise.name}"), backgroundColor: const Color(0xFF00E676), duration: const Duration(seconds: 1)));
-            },
-            child: const Text("SÍ, CAMBIAR", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-          )
-        ],
-      ),
-    );
-  }
-
   void _showSwapOptions() {
     List<Exercise> alternatives = ExerciseDatabase.getAlternativesFor(currentExerciseName);
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1E1E1E),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       isScrollControlled: true,
       builder: (context) {
         return Padding(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: const [Icon(Icons.science, color: Color(0xFF00E676)), SizedBox(width: 10), Text("Alternativa Científica", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))]),
-              const SizedBox(height: 5),
-              const Text("Si la máquina está ocupada, usa esta opción biomecánicamente similar.", style: TextStyle(color: Colors.grey, fontSize: 12)),
+              const Text("Alternativa Científica", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 20),
-              if (alternatives.isEmpty)
-                Container(padding: const EdgeInsets.all(15), decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(10)), child: const Text("No se encontró un sustituto directo en la base de datos.", style: TextStyle(color: Colors.grey)))
+               if (alternatives.isEmpty)
+                const Text("No hay alternativas directas.", style: TextStyle(color: Colors.grey))
               else
                 ...alternatives.map((alt) => ListTile(
-                    contentPadding: const EdgeInsets.symmetric(vertical: 5),
-                    title: Text(alt.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                    subtitle: Text("💡 ${alt.scientificNote}", style: const TextStyle(color: Color(0xFF00E676), fontStyle: FontStyle.italic, fontSize: 12)),
-                    trailing: const Icon(Icons.touch_app, color: Color(0xFF00E676), size: 20),
-                    onTap: () { Navigator.pop(context); _showSwapConfirmation(alt); },
+                    title: Text(alt.name, style: const TextStyle(color: Colors.white)),
+                    subtitle: Text(alt.scientificNote, style: const TextStyle(color: Color(0xFF00E676), fontSize: 12)),
+                    onTap: () { 
+                       Navigator.pop(context); 
+                       setState(() => currentExerciseName = alt.name);
+                       _initializeRealData();
+                    },
                   )).toList(),
             ],
           ),
@@ -235,10 +278,11 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
     }
   }
 
-  // --- TIMERS ---
   void _startRestTimer() { 
-    WakelockPlus.enable(); // MANTENER PANTALLA
-    _timeLeftNotifier.value = widget.restSeconds; 
+    WakelockPlus.enable(); 
+    int duration = _getAdaptiveRestTime();
+    _timerEndTime = DateTime.now().add(Duration(seconds: duration));
+    _timeLeftNotifier.value = duration; 
     _isRestFinishedNotifier.value = false; 
     _isPausedNotifier.value = false; 
     HapticFeedback.mediumImpact(); 
@@ -246,9 +290,46 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
     _resumeInternalTimer(); 
   }
 
-  void _resumeInternalTimer() { _timer?.cancel(); _timer = Timer.periodic(const Duration(seconds: 1), (timer) { if (!mounted) { timer.cancel(); return; } if (_isPausedNotifier.value) return; if (_timeLeftNotifier.value > 0) { _timeLeftNotifier.value--; } else { timer.cancel(); _finishTimerSequence(); } }); }
+  void _resumeInternalTimer() { 
+    _timer?.cancel(); 
+    if (_isPausedNotifier.value) {
+       _timerEndTime = DateTime.now().add(Duration(seconds: _frozenTimeLeft));
+       _isPausedNotifier.value = false;
+    }
+    _timer = Timer.periodic(const Duration(milliseconds: 200), (timer) { 
+      _syncTimerUI();
+    }); 
+  }
+
+  void _syncTimerUI() {
+    if (!mounted || _timerEndTime == null) return;
+    if (_isPausedNotifier.value) return; 
+
+    final now = DateTime.now();
+    final difference = _timerEndTime!.difference(now).inSeconds;
+
+    if (difference <= 0) { 
+      _timer?.cancel(); 
+      _timeLeftNotifier.value = 0;
+      _finishTimerSequence(); 
+    } else {
+      _timeLeftNotifier.value = difference;
+    }
+  }
+
   void _finishTimerSequence() { if (!mounted) return; _isRestFinishedNotifier.value = true; _triggerSafeAlarmLoop(); }
-  void _triggerSafeAlarmLoop() { _alarmTimer?.cancel(); _alarmLoopCount = 0; _playAlarmSignal(); _alarmTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) { if (!mounted || !_isRestFinishedNotifier.value) { timer.cancel(); return; } if (_alarmLoopCount >= 20) { timer.cancel(); _audioPlayer.stop(); return; } _playAlarmSignal(); _alarmLoopCount++; }); }
+  
+  void _triggerSafeAlarmLoop() { 
+    _alarmTimer?.cancel(); 
+    _alarmLoopCount = 0; 
+    _playAlarmSignal(); 
+    _alarmTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) { 
+      if (!mounted || !_isRestFinishedNotifier.value) { timer.cancel(); return; } 
+      if (_alarmLoopCount >= 20) { timer.cancel(); _audioPlayer.stop(); return; } 
+      _playAlarmSignal(); 
+      _alarmLoopCount++; 
+    }); 
+  }
   
   void _playAlarmSignal() { 
     _audioPlayer.stop(); 
@@ -257,7 +338,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
   }
   
   void _stopTimerAndClose() { 
-    WakelockPlus.disable(); // APAGAR PANTALLA PERMITIDO
+    WakelockPlus.disable(); 
     _timer?.cancel(); 
     _alarmTimer?.cancel(); 
     _audioPlayer.stop(); 
@@ -267,9 +348,32 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
     } 
   }
   
-  void _togglePause() => _isPausedNotifier.value = !_isPausedNotifier.value;
-  void _addTime(int seconds) => _timeLeftNotifier.value += seconds;
-  void _subtractTime(int seconds) { if (_timeLeftNotifier.value > seconds) _timeLeftNotifier.value -= seconds; else _timeLeftNotifier.value = 0; }
+  void _togglePause() {
+    if (_isPausedNotifier.value) {
+      _resumeInternalTimer();
+    } else {
+      _timer?.cancel();
+      _isPausedNotifier.value = true;
+      if (_timerEndTime != null) {
+        _frozenTimeLeft = _timerEndTime!.difference(DateTime.now()).inSeconds;
+        if (_frozenTimeLeft < 0) _frozenTimeLeft = 0;
+      }
+    }
+  }
+
+  void _addTime(int seconds) {
+    if (_timerEndTime != null) {
+      _timerEndTime = _timerEndTime!.add(Duration(seconds: seconds));
+      _syncTimerUI();
+    }
+  }
+  
+  void _subtractTime(int seconds) { 
+    if (_timerEndTime != null) {
+      _timerEndTime = _timerEndTime!.subtract(Duration(seconds: seconds));
+      _syncTimerUI();
+    }
+  }
 
   void _showTimerOverlay() {
     showDialog(context: context, barrierDismissible: false, builder: (context) {
@@ -284,7 +388,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
                     ]))));
           });
     }).then((_) { 
-      WakelockPlus.disable(); // Asegurar desactivación al cerrar modal
+      WakelockPlus.disable(); 
       _timer?.cancel(); _alarmTimer?.cancel(); _audioPlayer.stop(); 
     });
   }
@@ -305,10 +409,12 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
         ),
         body: Column(
           children: [
-            Container(padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 10), color: Colors.black, child: Row(children: const [SizedBox(width: 40, child: Text("#", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold))), Expanded(child: Center(child: Text("PESO (KG)", style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1)))), Expanded(child: Center(child: Text("REPS", style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1)))), SizedBox(width: 80, child: Center(child: Icon(Icons.check, color: Colors.grey, size: 18)))])),
+            // HEADER MODIFICADO PARA MOSTRAR OBJETIVO DE REPS
+            Container(padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 10), color: Colors.black, child: Row(children: [const SizedBox(width: 40, child: Text("#", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold))), const Expanded(child: Center(child: Text("PESO (KG)", style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1)))), Expanded(child: Center(child: Text("REPS ($_optimalReps)", style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1)))), const SizedBox(width: 80, child: Center(child: Icon(Icons.check, color: Colors.grey, size: 18)))])),
             Expanded(child: ListView.separated(
                 controller: _scrollController,
-                padding: const EdgeInsets.symmetric(vertical: 10), itemCount: widget.targetSets, separatorBuilder: (c, i) => const SizedBox(height: 10),
+                // Usamos setsData.length en lugar de targetSets
+                padding: const EdgeInsets.symmetric(vertical: 10), itemCount: setsData.length, separatorBuilder: (c, i) => const SizedBox(height: 10),
                 itemBuilder: (context, index) {
                   final set = setsData[index];
                   bool isDone = set['isCompleted'];

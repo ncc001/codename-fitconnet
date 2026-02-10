@@ -1,127 +1,62 @@
 import 'exercise_database.dart';
 
 class RoutineGenerator {
-  
-  // Método principal: "Dame la rutina para hoy"
-  static List<Map<String, dynamic>> generate(int trainingDays, int weekday) {
-    // weekday: 1 = Lunes, 7 = Domingo
+  // Esta función ahora coincide exactamente con lo que pide tu Home Screen
+  static List<Exercise> generate(int trainingDays, int weekday) {
+    List<String> workoutIds = [];
+
+    // --- LÓGICA DE 3 DÍAS (FULL BODY) ---
+    if (trainingDays == 3) {
+      if (weekday == 1 || weekday == 3 || weekday == 5) {
+        workoutIds = [
+          'squat_barbell', 'bench_press_barbell', 'lat_pulldown', 
+          'military_press', 'barbell_curl', 'tricep_pushdown'
+        ];
+      }
+    }
     
-    if (trainingDays == 3) return _get3DaySplit(weekday);
-    if (trainingDays == 4) return _get4DaySplit(weekday);
-    if (trainingDays == 5) return _get5DaySplit(weekday);
-    
-    // Por defecto (si no hay config), devolvemos Torso (Lunes)
-    return _getTorsoRoutine();
-  }
+    // --- LÓGICA DE 4 DÍAS (TORSO / PIERNA) ---
+    else if (trainingDays == 4) {
+      if (weekday == 1 || weekday == 4) { // Torso
+        workoutIds = [
+          'bench_press_barbell', 'barbell_row', 'military_press', 
+          'pull_up', 'incline_db_press', 'lateral_raises'
+        ];
+      } else if (weekday == 2 || weekday == 5) { // Pierna
+        workoutIds = [
+          'squat_barbell', 'romanian_deadlift', 'leg_press', 
+          'leg_extension', 'hamstring_curl_seated', 'standing_calf_raise'
+        ];
+      }
+    }
 
-  // --- LÓGICA 3 DÍAS (FULL BODY) ---
-  // Lunes (1), Miércoles (3), Viernes (5)
-  static List<Map<String, dynamic>> _get3DaySplit(int day) {
-    if (day == 1 || day == 5) return _getFullBodyA(); // Lun y Vie
-    if (day == 3) return _getFullBodyB();             // Mié
-    return []; // Días de descanso
-  }
+    // --- LÓGICA DE 5 DÍAS (PPL) ---
+    else {
+      if (weekday == 1) workoutIds = ['bench_press_barbell', 'military_press', 'incline_db_press', 'lateral_raises', 'tricep_pushdown'];
+      else if (weekday == 2) workoutIds = ['romanian_deadlift', 'pull_up', 'barbell_row', 'face_pull', 'barbell_curl'];
+      else if (weekday == 3) workoutIds = ['squat_barbell', 'leg_press', 'leg_extension', 'hamstring_curl_seated', 'standing_calf_raise'];
+      else if (weekday == 4) workoutIds = ['bench_press_barbell', 'lat_pulldown', 'db_shoulder_press', 'hammer_curl', 'skullcrushers'];
+      else if (weekday == 5) workoutIds = ['romanian_deadlift', 'bulgarian_split_squat', 'leg_press', 'hamstring_curl_seated'];
+    }
 
-  // --- LÓGICA 4 DÍAS (TORSO / PIERNA) ---
-  // Lun (1), Mar (2), Jue (4), Vie (5)
-  static List<Map<String, dynamic>> _get4DaySplit(int day) {
-    if (day == 1 || day == 4) return _getTorsoRoutine(); // Torso
-    if (day == 2 || day == 5) return _getPiernaRoutine(); // Pierna
-    return []; // Mié, Sáb, Dom descanso
-  }
+    if (workoutIds.isEmpty) return [];
 
-  // --- LÓGICA 5 DÍAS (HÍBRIDA) ---
-  // Lun (Torso), Mar (Pierna), Jue (Empuje), Vie (Tracción), Sáb (Pierna)
-  static List<Map<String, dynamic>> _get5DaySplit(int day) {
-    if (day == 1) return _getTorsoRoutine();
-    if (day == 2) return _getPiernaRoutine();
-    if (day == 4) return _getEmpujeRoutine(); // Push
-    if (day == 5) return _getTraccionRoutine(); // Pull
-    if (day == 6) return _getPiernaRoutine(); // Leg (focus diferente idealmente, pero usamos base)
-    return []; // Mié y Dom descanso
-  }
-
-  // --- DEFINICIÓN DE RUTINAS (Usando tu BD Científica) ---
-  
-  static List<Map<String, dynamic>> _getTorsoRoutine() {
-    return [
-      _buildEx("pecho_press_inclinado_manc", 4, "8-10", true), // Compuesto pesado
-      _buildEx("espalda_jalon_pecho", 4, "10-12", false),
-      _buildEx("hombro_press_mancuerna", 3, "8-12", false),
-      _buildEx("pecho_press_plano_maq", 3, "12-15", false), // Fatiga metabólica
-      _buildEx("espalda_remo_pecho_apoyado", 3, "12-15", false),
-      _buildEx("hombro_elev_lat_polea", 3, "15-20", false),
-    ];
-  }
-
-  static List<Map<String, dynamic>> _getPiernaRoutine() {
-    return [
-      _buildEx("pierna_sentadilla_hack", 4, "6-10", true), // Pesado
-      _buildEx("pierna_peso_muerto_rumano", 3, "8-12", false),
-      _buildEx("pierna_prensa", 3, "12-15", false),
-      _buildEx("pierna_curl_sentado", 3, "12-15", false),
-      _buildEx("pierna_bulgara", 2, "12-15", false), // Unilateral opcional (id inventado si no existe)
-    ];
-  }
-
-  static List<Map<String, dynamic>> _getFullBodyA() {
-    return [
-      _buildEx("pierna_sentadilla_hack", 3, "8-10", true),
-      _buildEx("pecho_press_inclinado_manc", 3, "8-10", false),
-      _buildEx("espalda_jalon_pecho", 3, "10-12", false),
-      _buildEx("hombro_elev_lat_polea", 3, "15", false),
-      _buildEx("brazo_curl_bayesiano", 3, "12", false),
-    ];
-  }
-
-  static List<Map<String, dynamic>> _getFullBodyB() {
-    return [
-      _buildEx("pierna_peso_muerto_rumano", 3, "8-10", true),
-      _buildEx("hombro_press_mancuerna", 3, "8-10", false),
-      _buildEx("espalda_remo_pecho_apoyado", 3, "10-12", false),
-      _buildEx("pecho_press_plano_maq", 3, "12", false),
-      _buildEx("brazo_triceps_katana", 3, "12", false),
-    ];
-  }
-
-  static List<Map<String, dynamic>> _getEmpujeRoutine() {
-    return [
-      _buildEx("pecho_press_inclinado_manc", 4, "8-10", true),
-      _buildEx("hombro_press_mancuerna", 3, "10-12", false),
-      _buildEx("pecho_press_plano_maq", 3, "12-15", false),
-      _buildEx("hombro_elev_lat_polea", 4, "15-20", false),
-      _buildEx("brazo_triceps_katana", 3, "12-15", false),
-    ];
-  }
-
-  static List<Map<String, dynamic>> _getTraccionRoutine() {
-    return [
-      _buildEx("espalda_jalon_pecho", 4, "8-12", true),
-      _buildEx("espalda_remo_pecho_apoyado", 3, "10-12", false),
-      _buildEx("hombro_face_pull", 3, "15", false), // (Face pull)
-      _buildEx("brazo_curl_bayesiano", 4, "12-15", false),
-    ];
-  }
-
-  // Helper para construir el objeto rápido y buscar nombre bonito
-  static Map<String, dynamic> _buildEx(String id, int sets, String reps, bool weakPoint) {
-    // Buscamos el nombre bonito en la BD, si no existe usamos el ID
-    String displayName = id;
-    final exerciseObj = ExerciseDatabase.allExercises.firstWhere(
-      (e) => e.id == id, 
-      orElse: () => Exercise(id: id, name: id.replaceAll('_', ' ').toUpperCase(), targetMuscle: '', alternativeIds: [], scientificNote: '')
-    );
-    
-    if (exerciseObj.name != id.toUpperCase()) displayName = exerciseObj.name;
-
-    return {
-      "name": displayName, // Nombre real (ej: "Press Inclinado")
-      "id": id,            // ID Técnico (ej: "pecho_press...") para búsquedas futuras
-      "muscle": exerciseObj.targetMuscle,
-      "sets": sets,
-      "reps": reps,
-      "rest": "90s",
-      "isWeakPoint": weakPoint
-    };
+    // Mapeo seguro usando la nueva base de datos
+    return workoutIds.map((id) {
+      try {
+        // Busca en la lista estática 'allExercises'
+        return ExerciseDatabase.allExercises.firstWhere((e) => e.id == id);
+      } catch (e) {
+        // Si falla, crea un ejercicio genérico compatible
+        return Exercise(
+          id: id, 
+          name: id.replaceAll('_', ' ').toUpperCase(), 
+          targetMuscle: 'General', 
+          category: 'General', 
+          scientificNote: '',
+          alternativeIds: []
+        );
+      }
+    }).toList();
   }
 }
