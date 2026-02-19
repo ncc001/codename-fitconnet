@@ -6,7 +6,6 @@ Future<void> loadInitialData() async {
   final box = await Hive.openBox<Exercise>('exercises');
 
   if (box.isEmpty) {
-    print('📦 Cargando base de datos científica inicial...');
     
     final List<Map<String, dynamic>> data = [
       {
