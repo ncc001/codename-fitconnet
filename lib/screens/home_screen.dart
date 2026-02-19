@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'workout_screen.dart';
 import '../data/routine_generator.dart';
 import '../data/exercise_database.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,12 +26,16 @@ class _HomeScreenState extends State<HomeScreen> {
   
   List<Exercise> dailyRoutine = [];
 
-  @override
+@override
   void initState() {
     super.initState();
+    
+    // 🔥 PASO 2: Leemos la memoria antes de cargar la pantalla
+    var settingsBox = Hive.box('settings');
+    _isManualMode = settingsBox.get('isManualMode', defaultValue: false);
+    
     _updateRoutine();
   }
-
   // Ayudante para convertir la fecha en una "clave" única (YYYY-MM-DD)
   String _getDateKey(DateTime date) {
     return DateFormat('yyyy-MM-dd').format(date);
@@ -198,7 +203,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Text(_isManualMode ? "Personaliza este día" : "Optimizado por IA", style: const TextStyle(color: Colors.grey, fontSize: 10)),
                   ],
                 ),
-                Switch(
+              Switch(
                   value: _isManualMode,
                   activeColor: const Color(0xFF00E676),
                   onChanged: (val) {
@@ -206,6 +211,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       _isManualMode = val;
                       _updateRoutine();
                     });
+                    
+                    // 🔥 PASO 3: Guardamos la decisión si tocas el botón
+                    var settingsBox = Hive.box('settings');
+                    settingsBox.put('isManualMode', val); 
                   },
                 ),
               ],
@@ -252,7 +261,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       title: Text(ex.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                       subtitle: Text("${ex.targetMuscle} • ${ex.category}", style: const TextStyle(color: Colors.grey, fontSize: 12)),
                       
-                      // --- AQUÍ ESTÁ EL CAMBIO PARA BORRAR ---
                       trailing: _isManualMode 
                         ? IconButton( // En MANUAL mostramos la papelera
                             icon: const Icon(Icons.delete_outline, color: Colors.redAccent),

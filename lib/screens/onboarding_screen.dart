@@ -72,7 +72,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  void _finishOnboarding(bool isManual) async {
+void _finishOnboarding(bool isManual) async {
     var box = Hive.box('settings');
 
     await box.put('userName', _nameController.text);
@@ -84,8 +84,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     await box.put('userGoal', _goal);
     await box.put('daysPerWeek', _daysPerWeek);
     await box.put('weakPoint', _weakPoint);
-   // En OnboardingScreen:
-  await box.put('isManualMode', true);
+    
+    // 🔥 CORRECCIÓN CLAVE: Usamos la variable 'isManual' que viene del botón
+    await box.put('isManualMode', isManual); 
+    
     await box.put('seenOnboarding', true);
 
     if (!mounted) return;
