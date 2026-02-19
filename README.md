@@ -27,7 +27,7 @@ Si quieres clonar este repositorio y correrlo en tu máquina, sigue estos pasos:
    ```bash
    git clone [https://github.com/TU_USUARIO/codename-fitconnet.git](https://github.com/TU_USUARIO/codename-fitconnet.git)
 
-   📦 Descargar APK
+📦 Descargar APK
 Para instalar la app directamente en tu Android, ve a la sección de Releases en la barra lateral derecha de este repositorio y descarga la última versión oficial (app-release.apk).
 
 ⚠️ Nota Especial 
